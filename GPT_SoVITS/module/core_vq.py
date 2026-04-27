@@ -158,24 +158,13 @@ class EuclideanCodebook(nn.Module):
         if self.inited:
             return
 
-        if dist.is_available() and dist.is_initialized():
-            # [B * T * world_size, D]
-            data = SyncFunction.apply(data)
-
-        if dist.get_rank() == 0:
-            embed, cluster_size = kmeans(data, self.codebook_size, self.kmeans_iters)
-        else:
-            embed = torch.empty_like(self.embed)
-            cluster_size = torch.empty_like(self.cluster_size)
-        dist.broadcast(embed, src=0)
-        dist.broadcast(cluster_size, src=0)
+        # MPS doesn't support distributed ops - run kmeans on single process
+        embed, cluster_size = kmeans(data, self.codebook_size, self.kmeans_iters)
 
         self.embed.data.copy_(embed)
         self.embed_avg.data.copy_(embed.clone())
         self.cluster_size.data.copy_(cluster_size)
         self.inited.data.copy_(torch.Tensor([True]))
-        # Make sure all buffers across workers are in sync after initialization
-        broadcast_tensors(self.buffers())
 
     def replace_(self, samples, mask):
         modified_codebook = torch.where(mask[..., None], sample_vectors(samples, self.codebook_size), self.embed)

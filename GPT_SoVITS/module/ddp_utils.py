@@ -9,46 +9,13 @@ class SyncFunction(torch.autograd.Function):
     @staticmethod
     # @torch.no_grad()
     def forward(ctx, tensor):
-        world_size = torch.distributed.get_world_size()
-
-        # Collect batch sizes from all processes
-        local_bs = torch.tensor([tensor.shape[0]], device=tensor.device)
-        batch_sizes = [torch.zeros_like(local_bs) for _ in range(world_size)]
-        torch.distributed.all_gather(batch_sizes, local_bs)
-
-        # Convert to integer list and find the minimum
-        batch_sizes_int = [bs.item() for bs in batch_sizes]
-        min_bs = min(batch_sizes_int)
-
-        # Crop the tensor to the minimum batch size if needed
-        cropped_tensor = tensor[:min_bs] if tensor.shape[0] > min_bs else tensor
-
-        # Prepare for gathering
-        out_shape = (min_bs * world_size,) + tensor.shape[1:]
-        gathered_tensor = torch.zeros(out_shape, dtype=tensor.dtype, device=tensor.device)
-
-        # Build tensor list for all_gather
-        tensor_list = list(torch.chunk(gathered_tensor, world_size))
-
-        # Perform all_gather using the cropped tensors
-        torch.distributed.all_gather(tensor_list, cropped_tensor)
-
-        # Save for backward pass
-        ctx.min_bs = min_bs
-        ctx.world_size = world_size
-        ctx.orig_shape = tensor.shape
-
-        return gathered_tensor
+        # Single-process passthrough (MPS doesn't support distributed ops)
+        # For multi-GPU training on CUDA, this would gather from all ranks
+        return tensor
 
     @staticmethod
     def backward(ctx, grad_output):
-        assert False
-        grad_input = grad_output.clone()
-        torch.distributed.all_reduce(grad_input, op=torch.distributed.ReduceOp.SUM, async_op=False)
-
-        idx_from = torch.distributed.get_rank() * ctx.batch_size
-        idx_to = (torch.distributed.get_rank() + 1) * ctx.batch_size
-        return grad_input[idx_from:idx_to]
+        return grad_output
 
 class DDP(DistributedDataParallel):
     """

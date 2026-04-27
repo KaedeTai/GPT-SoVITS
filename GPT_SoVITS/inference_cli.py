@@ -30,15 +30,13 @@ def synthesize(
     change_gpt_weights(gpt_path=GPT_model_path)
     change_sovits_weights(sovits_path=SoVITS_model_path)
 
-    # Synthesize audio
+    # Synthesize audio (use default params: top_k=20, top_p=0.6, temperature=0.6)
     synthesis_result = get_tts_wav(
         ref_wav_path=ref_audio_path,
         prompt_text=ref_text,
         prompt_language=i18n(ref_language),
         text=target_text,
         text_language=i18n(target_language),
-        top_p=1,
-        temperature=1,
     )
 
     result_list = list(synthesis_result)
