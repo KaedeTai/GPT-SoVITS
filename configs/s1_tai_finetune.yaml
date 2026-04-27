@@ -1,9 +1,9 @@
 train:
   seed: 1234
-  epochs: 50
+  epochs: 100
   batch_size: 4
   save_every_n_epoch: 1
-  precision: 16-mixed
+  precision: 32
   gradient_clip: 1.0
   if_save_latest: true
   if_save_every_weights: true

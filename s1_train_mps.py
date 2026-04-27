@@ -17,6 +17,26 @@ import logging
 from pathlib import Path
 
 import torch
+import functools
+import pickle
+
+# Monkey-patch torch.load to use weights_only=False by default (fix for PyTorch 2.6+ with PL checkpoints containing pathlib objects)
+_original_torch_load = torch.load
+@functools.wraps(_original_torch_load)
+def _patched_torch_load(*args, weights_only=None, **kwargs):
+    if weights_only is None:
+        weights_only = False
+    return _original_torch_load(*args, weights_only=weights_only, **kwargs)
+torch.load = _patched_torch_load
+
+# Also patch pickle.Unpickler to allow PosixPath
+class _SafeUnpickler(pickle.Unpickler):
+    def find_class(self, module, name):
+        if module == 'pathlib' and name == 'PosixPath':
+            import pathlib
+            return pathlib.PosixPath
+        return super().find_class(module, name)
+
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
