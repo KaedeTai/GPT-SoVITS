@@ -193,3 +193,24 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Virtual environment
+.venv/
+venv/
+*.venv/
+
+# Downloaded pretrained models (use download_pretrained.sh)
+GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large/
+GPT_SoVITS/pretrained_models/gsv-*/
+GPT_SoVITS/pretrained_models/sv/
+GPT_SoVITS/pretrained_models/fast_langdetect/
+GPT_SoVITS/pretrained_models/chinese-hubert-base/
+
+# Model checkpoints
+*.pth
+*.ckpt
+*.pt
+
+# Logs
+*.log
+events.out.tfevents.*
