@@ -17,7 +17,8 @@ from module.quantize import ResidualVectorQuantizer
 
 # from text import symbols
 from text import symbols as symbols_v1
-from text import symbols2 as symbols_v2
+from text import symbols2 as symbols_v2          # zh — len=732
+from text import symbols2_tw as symbols_v2_tw    # tw — len=1033
 
 
 class StochasticDurationPredictor(nn.Module):
@@ -187,6 +188,8 @@ class TextEncoder(nn.Module):
 
         if self.version == "v1":
             symbols = symbols_v1.symbols
+        elif self.version in ("v2tw", "v2ProTw", "v2ProPlusTw"):
+            symbols = symbols_v2_tw.symbols
         else:
             symbols = symbols_v2.symbols
         self.text_embedding = nn.Embedding(len(symbols), hidden_channels)
@@ -763,7 +766,7 @@ class CodePredictor(nn.Module):
             return pred_codes.transpose(0, 1)
 
 
-v2pro_set = {"v2Pro", "v2ProPlus"}
+v2pro_set = {"v2Pro", "v2ProPlus", "v2ProTw", "v2ProPlusTw"}
 
 
 class SynthesizerTrn(nn.Module):

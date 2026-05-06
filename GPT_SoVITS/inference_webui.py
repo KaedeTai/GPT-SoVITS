@@ -286,6 +286,12 @@ def change_sovits_weights(sovits_path, prompt_language=None, text_language=None)
         hps.model.version = "v2"  # v3model,v2sybomls
     elif dict_s2["weight"]["enc_p.text_embedding.weight"].shape[0] == 322:
         hps.model.version = "v1"
+    elif dict_s2["weight"]["enc_p.text_embedding.weight"].shape[0] == 1033:
+        # 1033-row text_embedding ⇒ tw vocab (zh 732 + tw_* 301).  See
+        # text/symbols2_tw.py.  Set the v2tw variant; the v2pro/v2ProPlus
+        # combiner block below will promote to v2ProTw / v2ProPlusTw if
+        # the ckpt is also v2Pro/v2ProPlus shaped.
+        hps.model.version = "v2tw"
     else:
         hps.model.version = "v2"
     version = hps.model.version
@@ -294,7 +300,14 @@ def change_sovits_weights(sovits_path, prompt_language=None, text_language=None)
         if "Pro" not in model_version:
             model_version = version
         else:
-            hps.model.version = model_version
+            # Combine the v2/v2tw shape-detect with the v2Pro/v2ProPlus
+            # checkpoint variant.  e.g. (version=v2tw, model_version=v2Pro)
+            # → v2ProTw, so SynthesizerTrn picks the 1033-row vocab AND
+            # the Pro architecture flags.
+            if version == "v2tw" and model_version in ("v2Pro", "v2ProPlus"):
+                hps.model.version = model_version + "Tw"
+            else:
+                hps.model.version = model_version
         vq_model = SynthesizerTrn(
             hps.data.filter_length // 2 + 1,
             hps.train.segment_size // hps.data.hop_length,
@@ -888,8 +901,9 @@ def get_tts_wav(
                 )
                 pred_semantic = pred_semantic[:, -idx:].unsqueeze(0)
                 cache[i_text] = pred_semantic
+
         t3 = ttime()
-        is_v2pro = model_version in {"v2Pro", "v2ProPlus"}
+        is_v2pro = model_version in {"v2Pro", "v2ProPlus", "v2ProTw", "v2ProPlusTw"}
         # print(23333,is_v2pro,model_version)
         ###v3不存在以下逻辑和inp_refs
         if model_version not in v3v4set:

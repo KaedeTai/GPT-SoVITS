@@ -8,7 +8,8 @@ import os
 #     from text.symbols2 import symbols
 
 from text import symbols as symbols_v1
-from text import symbols2 as symbols_v2
+from text import symbols2 as symbols_v2          # zh 732
+from text import symbols2_tw as symbols_v2_tw    # tw 1033
 
 special = [
     # ("%", "zh", "SP"),
@@ -18,6 +19,22 @@ special = [
 ]
 
 
+def _pick_symbols(version, language):
+    """Pick the correct symbol set.
+
+    Physical isolation: zh inference / training always sees the 732-symbol
+    vocab.  Only when language=="tw" do we expand to the 1033-symbol vocab
+    (which is a strict superset — first 732 are byte-identical), so tw_*
+    tokens validate.  Setting version="v2tw" via env or kwarg also picks
+    the 1033 vocab unconditionally.
+    """
+    if version == "v1":
+        return symbols_v1.symbols
+    if version == "v2tw" or language == "tw":
+        return symbols_v2_tw.symbols
+    return symbols_v2.symbols
+
+
 def clean_text(text, language, version=None):
     if version is None:
         version = os.environ.get("version", "v2")
@@ -25,8 +42,8 @@ def clean_text(text, language, version=None):
         symbols = symbols_v1.symbols
         language_module_map = {"zh": "chinese", "ja": "japanese", "en": "english"}
     else:
-        symbols = symbols_v2.symbols
-        language_module_map = {"zh": "chinese2", "ja": "japanese", "en": "english", "ko": "korean", "yue": "cantonese"}
+        symbols = _pick_symbols(version, language)
+        language_module_map = {"zh": "chinese2", "ja": "japanese", "en": "english", "ko": "korean", "yue": "cantonese", "tw": "taiwanese"}
 
     if language not in language_module_map:
         language = "en"
@@ -62,8 +79,8 @@ def clean_special(text, language, special_s, target_symbol, version=None):
         symbols = symbols_v1.symbols
         language_module_map = {"zh": "chinese", "ja": "japanese", "en": "english"}
     else:
-        symbols = symbols_v2.symbols
-        language_module_map = {"zh": "chinese2", "ja": "japanese", "en": "english", "ko": "korean", "yue": "cantonese"}
+        symbols = _pick_symbols(version, language)
+        language_module_map = {"zh": "chinese2", "ja": "japanese", "en": "english", "ko": "korean", "yue": "cantonese", "tw": "taiwanese"}
 
     """
     特殊静音段sp符号处理

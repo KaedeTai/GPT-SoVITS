@@ -1,3 +1,20 @@
+# -----------------------------------------------------------------------
+# PHYSICAL ISOLATION — this file is the Taiwanese (Tâi-gí / Hō-ló) variant.
+# len(symbols) == 1033 == 732 zh + 301 tw_*.
+#
+# Sister file `symbols2.py` is zh-only (732, never grows).  These two files
+# do NOT import from each other — picking which vocab to use is a deliberate
+# choice made in the inference / training entry-point script, NOT an env-var
+# gate.  See `tts_long.py` (zh) and `tts_tw.py` (tw) for examples.
+#
+# History:  prior to 2026-05-07 the same file was reused for both vocabs and
+# gated behind GPT_SOVITS_INCLUDE_TW=1.  Forgetting to set/unset the gate
+# silently resized text_embedding (732↔1033) — pytorch's strict=False load
+# would then drop the embedding param entirely and leave it random-init,
+# poisoning zh inference.  The env-var gate is now removed; vocab is
+# selected by physically importing this file vs symbols2.py.
+# -----------------------------------------------------------------------
+
 # punctuation = ['!', '?', '…', ",", ".","@"]#@是SP停顿
 punctuation = ["!", "?", "…", ",", "."]  # @是SP停顿
 punctuation.append("-")
@@ -788,26 +805,33 @@ symbols += sorted(list(ko_symbols))
 symbols += sorted(list(yue_symbols))  ##新加的yue统一摆在后头#已查过开头加Y后没有重复，韩文显然不会重复
 # print(len(symbols))
 
+# Sanity:  the first 732 entries here MUST exactly match symbols2.symbols.
+# We don't import symbols2 (physical isolation) — but the construction
+# above reproduces the same recipe character-for-character.  See
+# `test_symbols_split.py` (and the verification step in the
+# 2026-05-07 split-isolation refactor) for the cross-check.
+
 # -----------------------------------------------------------------------
-# PHYSICAL ISOLATION — this file is zh-ONLY.  len(symbols) == 732, never
-# grows.  Taiwanese (tw_*) tokens live in `symbols2_tw.py` as a separate,
-# independent vocab of length 1033.  The two files do NOT import from each
-# other; pick the right one in the inference / training script.
-#
-# Why the split:  the old code appended tw_* tokens behind the
-# GPT_SOVITS_INCLUDE_TW=1 env var.  Forgetting to set/unset it would silently
-# resize text_embedding from (732, 192) to (1033, 192); pytorch's
-# load_state_dict(strict=False) would then silently SKIP the embedding
-# (shape mismatch) and leave it random-init → severe timbre / accent drift.
-# That foot-gun is now gone:  this file always returns 732, regardless of
-# environment.
+# Taiwanese (Tâi-gí / Hō-ló) POJ phonemes — appended at the very end so
+# pretrained zh-only ckpt embedding rows (IDs 0..731) keep their original
+# meaning when this 1033-row vocab is used for tw inference / training.
+# Every token is `tw_` prefixed → no collision with any zh / ja / yue / ko
+# token that came before.
 # -----------------------------------------------------------------------
+import os as _os
+import sys as _sys
+try:
+    from text.taiwanese import get_taiwanese_symbols as _get_tw_syms
+except ImportError:
+    _sys.path.insert(0, _os.path.dirname(__file__))
+    from taiwanese import get_taiwanese_symbols as _get_tw_syms
+
+_tw_syms = _get_tw_syms()
+_existing = set(symbols)
+for _t in _tw_syms:
+    if _t not in _existing:
+        symbols.append(_t)
+        _existing.add(_t)
 
 if __name__ == "__main__":
     print(len(symbols))
-"""
-粤语：
-    732-353=379
-韩文+粤语：
-    732-322=410
-"""
