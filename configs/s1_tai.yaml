@@ -30,7 +30,7 @@ model:
 
 output_dir: /Users/kaede/tts/tai_voice_prepared/s1_logs
 
-train_semantic_path: /Users/kaede/tts/tai_voice_prepared/6-name2semantic-0.tsv
+train_semantic_path: /Users/kaede/tts/tai_voice_prepared/6-name2semantic_all.tsv
 train_phoneme_path: /Users/kaede/tts/tai_voice_prepared/2-name2text.txt
 
 inference:

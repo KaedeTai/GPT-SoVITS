@@ -7,6 +7,8 @@ import warnings
 warnings.filterwarnings("ignore")
 import os
 import sys
+sys.path.insert(0, "/Users/kaede/tts/GPT-SoVITS/GPT_SoVITS")
+sys.path.insert(0, "/Users/kaede/tts/GPT-SoVITS")
 import logging
 import random
 import json
@@ -23,7 +25,9 @@ torch.backends.mps.enable_aggregateActions = True
 sys.path.insert(0, "/Users/kaede/tts/GPT-SoVITS")
 
 import utils
-hps = utils.get_hparams_from_file('/Users/kaede/tts/GPT-SoVITS/configs/s2_tai_v2pro_finetune.json')
+import sys
+config_path = sys.argv[1] if len(sys.argv) > 1 else '/Users/kaede/tts/GPT-SoVITS/configs/s2_tai_v2pro_finetune.json'
+hps = utils.get_hparams_from_file(config_path)
 
 
 import logging
@@ -39,7 +43,7 @@ from module import commons
 
 logging.getLogger("pytorch_lightning").setLevel(logging.INFO)
 
-device = torch.device("cpu")  # DEBUG: using CPU instead of MPS
+device = torch.device("mps")  # DEBUG: using CPU instead of MPS
 global_step = 0
 
 def main():
@@ -76,7 +80,7 @@ def main():
     # (Some model code uses dist.get_rank())
     import torch.distributed as dist
     if not dist.is_initialized():
-        dist.init_process_group(backend="gloo", init_method="tcp://localhost:29500", 
+        dist.init_process_group(backend="gloo", init_method="tcp://localhost:29501", 
                                world_size=1, rank=0)
     
     # Models - MPS version
@@ -142,30 +146,50 @@ def main():
     
     if existing_ckpts:
         resume_epoch = max(existing_ckpts)
-        epoch_str = resume_epoch
+        epoch_str = resume_epoch + 1   # start training at NEXT epoch — don't overwrite the resumed ckpt
         g_ckpt = os.path.join(ckpt_dir, f's2_G_{resume_epoch}.pth')
         d_ckpt = os.path.join(ckpt_dir, f's2_D_{resume_epoch}.pth')
+        full_ckpt = os.path.join(ckpt_dir, f's2_full_{resume_epoch}.pth')
         logging.info(f'Resuming from epoch {resume_epoch}')
-        if os.path.exists(g_ckpt):
-            g_state = torch.load(g_ckpt, map_location='cpu', weights_only=False)
+
+        # Prefer s2_full_NN.pth for G — it has enc_q and opt_g (no warm-up needed).
+        # Fall back to s2_G_NN.pth (slim savee format) if full state missing.
+        if os.path.exists(full_ckpt):
+            g_state = torch.load(full_ckpt, map_location='cpu', weights_only=False)
+            net_g.load_state_dict(g_state['model'], strict=False)
+            if 'opt_g' in g_state and isinstance(g_state['opt_g'], dict):
+                try:
+                    optim_g.load_state_dict(g_state['opt_g'])
+                    logging.info('Restored opt_g state — no optimizer warm-up needed')
+                except Exception as e:
+                    logging.warning(f'opt_g restore failed (will warm up): {e}')
+            global_step = g_state.get('step', resume_epoch * len(train_loader))
+            logging.info(f'Loaded G full state from {full_ckpt} (step={global_step})')
+        elif os.path.exists(g_ckpt):
+            from GPT_SoVITS.process_ckpt import load_sovits_new
+            g_state = load_sovits_new(g_ckpt)
             if 'model' in g_state:
                 net_g.load_state_dict(g_state['model'], strict=False)
             elif 'weight' in g_state:
                 net_g.load_state_dict(g_state['weight'], strict=False)
-            logging.info(f'Loaded G from epoch {resume_epoch}')
+            logging.warning(f'No s2_full_{resume_epoch}.pth found — opt_g and enc_q reset; expect a brief warm-up.')
+            logging.info(f'Loaded G slim from {g_ckpt}')
+            global_step = resume_epoch * len(train_loader)
+
         if os.path.exists(d_ckpt):
             d_state = torch.load(d_ckpt, map_location='cpu', weights_only=False)
             if 'model' in d_state:
                 net_d.load_state_dict(d_state['model'], strict=False)
             elif 'weight' in d_state:
                 net_d.load_state_dict(d_state['weight'], strict=False)
+            if 'opt_d' in d_state and isinstance(d_state['opt_d'], dict):
+                try:
+                    optim_d.load_state_dict(d_state['opt_d'])
+                    logging.info('Restored opt_d state')
+                except Exception as e:
+                    logging.warning(f'opt_d restore failed (will warm up): {e}')
             logging.info(f'Loaded D from epoch {resume_epoch}')
-        # Restore optimizer state if available
-        if 'opt_g' in g_state and hasattr(g_state['opt_g'], 'state_dict'):
-            optim_g.load_state_dict(g_state['opt_g'])
-        if 'opt_d' in d_state and hasattr(d_state['opt_d'], 'state_dict'):
-            optim_d.load_state_dict(d_state['opt_d'])
-        global_step = g_state.get('step', resume_epoch * len(train_loader))
+
         logging.info(f'Resuming from step {global_step}')
     else:
         epoch_str = 1
@@ -183,7 +207,7 @@ def main():
     else:
         logging.info("Training SoVITS from scratch")
     
-    if hps.train.pretrained_s2D and os.path.exists(hps.train.pretrained_s2D):
+    if not existing_ckpts and hps.train.pretrained_s2D and os.path.exists(hps.train.pretrained_s2D):
         logging.info(f"Loading pretrained SoVITS D from {hps.train.pretrained_s2D}")
         pretrained_state = torch.load(hps.train.pretrained_s2D, map_location="cpu", weights_only=False)
         if "weight" in pretrained_state:
@@ -191,6 +215,8 @@ def main():
         else:
             net_d.load_state_dict(pretrained_state, strict=False)
         logging.info("Loaded pretrained SoVITS D")
+    elif existing_ckpts:
+        logging.info("Skipping pretrained S2D load (resuming from existing ckpt)")
     
     # Schedulers
     scheduler_g = torch.optim.lr_scheduler.ExponentialLR(optim_g, gamma=hps.train.lr_decay, last_epoch=-1)
@@ -320,26 +346,51 @@ def main():
     save_checkpoint("final", net_g, net_d, optim_g, optim_d)
 
 def save_checkpoint(epoch, net_g, net_d, optim_g, optim_d):
+    """Save G in inference-compatible format via savee(); D as raw torch.save (only used to resume training)."""
     ckpt_dir = hps.s2_ckpt_dir
     os.makedirs(ckpt_dir, exist_ok=True)
-    
-    # Save G
-    ckpt_path = os.path.join(ckpt_dir, f"s2_G_{epoch}.pth")
+
+    # Save G via savee() so inference_webui auto-detects v2Pro and loads correctly.
+    # savee() writes to f"{hps.save_weight_dir}/{name}.pth", so we set save_weight_dir
+    # to ckpt_dir for this call (mirrors GPT-SoVITS upstream behavior).
+    from GPT_SoVITS.process_ckpt import savee
+    prev_save_weight_dir = getattr(hps, "save_weight_dir", None)
+    hps.save_weight_dir = ckpt_dir
+    try:
+        result = savee(
+            net_g.state_dict(),
+            f"s2_G_{epoch}",
+            epoch,
+            global_step,
+            hps,
+            model_version=getattr(hps.model, "version", "v2Pro"),
+        )
+        if result != "Success.":
+            logging.warning(f"savee() returned non-success for G: {result}")
+    finally:
+        if prev_save_weight_dir is not None:
+            hps.save_weight_dir = prev_save_weight_dir
+
+    # Save FULL G state for resume — savee() drops enc_q and opt_g, which
+    # are needed to continue training without warming up from scratch.
+    # Naming: s2_full_NN.pth (raw torch.save, NOT inference-compatible).
+    ckpt_path_full = os.path.join(ckpt_dir, f"s2_full_{epoch}.pth")
     torch.save({
-        "model": net_g.state_dict(),
-        "opt_g": optim_g.state_dict(),
+        "model": net_g.state_dict(),       # includes enc_q
+        "opt_g": optim_g.state_dict(),     # optimizer state
         "step": global_step,
         "epoch": epoch,
-    }, ckpt_path)
-    
-    # Save D
+    }, ckpt_path_full)
+
+    # Save D in raw torch.save format — D is only needed to resume training,
+    # not for inference, so format compatibility doesn't matter here.
     ckpt_path_d = os.path.join(ckpt_dir, f"s2_D_{epoch}.pth")
     torch.save({
         "model": net_d.state_dict(),
         "opt_d": optim_d.state_dict(),
     }, ckpt_path_d)
-    
-    logging.info(f"Saved: {ckpt_path}")
+
+    logging.info(f"Saved: s2_G_{epoch}.pth (savee/v2Pro), s2_full_{epoch}.pth, s2_D_{epoch}.pth")
 
 if __name__ == "__main__":
     import torch.nn.functional as F

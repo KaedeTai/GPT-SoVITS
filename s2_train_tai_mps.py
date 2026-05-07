@@ -20,9 +20,10 @@ torch.backends.mps.enable_aggregateActions = True
 
 # Setup paths
 sys.path.insert(0, "/Users/kaede/tts/GPT-SoVITS")
+sys.path.insert(0, "/Users/kaede/tts/GPT-SoVITS/GPT_SoVITS")
 
 import utils
-hps = utils.get_hparams_from_file('/Users/kaede/tts/GPT-SoVITS/configs/s2_tai.json')
+hps = utils.get_hparams_from_file('/Users/kaede/tts/GPT-SoVITS/configs/s2_tai_scratch.json')
 
 import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -80,20 +81,19 @@ def main():
     if os.path.exists(hps.train.pretrained_s2G):
         logging.info("Loading pretrained weights...")
         ckpt = torch.load(hps.train.pretrained_s2G, map_location=device, weights_only=True)
-        model.load_state_dict(ckpt["model"], strict=False)
+        model.load_state_dict(ckpt["weight"], strict=False)
         logging.info("Pretrained weights loaded!")
     
     # Optimizer
     optim_g = torch.optim.AdamW(model.parameters(), lr=hps.train.learning_rate)
-    optim_d = torch.optim.AdamW(model.discriminator.parameters(), lr=hps.train.learning_rate)
-    
+        
     # Training loop
     for epoch in range(1, hps.train.epochs + 1):
         model.train()
         total_loss_g = 0
         total_loss_d = 0
         
-        for batch_idx, (phonemes, phoneme_lens, texts, text_lens, audios, audio_lens, speakers) in enumerate(train_loader):
+        for batch_idx, (ssl_padded, spec_padded, mel_padded, ssl_lengths, spec_lengths, text_padded, text_lengths, mel_lengths) in enumerate(train_loader):
             phonemes = phonemes.to(device)
             phoneme_lens = phoneme_lens.to(device)
             texts = texts.to(device)
