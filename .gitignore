@@ -219,3 +219,21 @@ GPT_SoVITS/pretrained_models/chinese-hubert-base/
 # Logs
 *.log
 events.out.tfevents.*
+
+# === ASR / subtitle / scratch outputs ===
+/*.srt
+/*.tsv
+/*.vtt
+/*.txt
+/linjiang_*.json
+/test_*.json
+/delegation_test.json
+ref_*.wav
+
+# === Backups ===
+*.bak
+*.bak_*
+*.openclaw_broken_backup
+
+# === scratch local-only training originals ===
+s2_train_mps_original.py

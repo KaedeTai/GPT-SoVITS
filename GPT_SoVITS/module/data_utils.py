@@ -114,8 +114,16 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
             with torch.no_grad():
                 ssl = torch.load("%s/%s.pt" % (self.path4, audiopath), map_location="cpu")
                 if ssl.shape[-1] != spec.shape[-1]:
+                    # Robustly align ssl to spec time-dim: pad if shorter, truncate if longer.
+                    # The original code only handled a 1-frame shortage; larger drifts
+                    # caused logs_p/logs_q time-dim mismatches in kl_loss
+                    # (e.g. T=128 vs T=136 with v2Pro + cnhubert + 32kHz hop=640).
                     typee = ssl.dtype
-                    ssl = F.pad(ssl.float(), (0, 1), mode="replicate").to(typee)
+                    if ssl.shape[-1] < spec.shape[-1]:
+                        diff = spec.shape[-1] - ssl.shape[-1]
+                        ssl = F.pad(ssl.float(), (0, diff), mode="replicate").to(typee)
+                    else:
+                        ssl = ssl[..., : spec.shape[-1]].contiguous()
                 ssl.requires_grad = False
                 if self.is_v2Pro:
                     sv_emb = torch.load("%s/%s.pt" % (self.path7, audiopath), map_location="cpu")

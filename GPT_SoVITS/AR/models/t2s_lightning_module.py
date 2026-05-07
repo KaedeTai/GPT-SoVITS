@@ -2,13 +2,17 @@
 # reference: https://github.com/lifeiteng/vall-e
 import os
 import sys
+import pathlib
 
 now_dir = os.getcwd()
 sys.path.append(now_dir)
 from typing import Dict
 
 import torch
+import torch.serialization
 from pytorch_lightning import LightningModule
+
+torch.serialization.add_safe_globals([pathlib.PosixPath])
 
 from AR.models.t2s_model import Text2SemanticDecoder
 from AR.modules.lr_schedulers import WarmupCosineLRSchedule
